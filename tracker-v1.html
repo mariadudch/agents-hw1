@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Трекер учебных задач</title>
+<style>
+  :root{
+    --bg:#f4f5fb; --card:#fff; --text:#1d2033; --muted:#7a7f99;
+    --line:#e6e8f2; --accent:#5b5bd6; --accent-soft:#ececfd;
+    --ok:#1f9d6b; --ok-soft:#e4f6ee; --danger:#d64545;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;
+    background:var(--bg);color:var(--text);line-height:1.4}
+  .wrap{max-width:640px;margin:40px auto;padding:0 16px}
+  h1{font-size:24px;margin:0 0 4px}
+  .sub{color:var(--muted);margin:0 0 20px;font-size:14px}
+  .card{background:var(--card);border-radius:16px;box-shadow:0 2px 12px rgba(30,35,80,.06);padding:20px;margin-bottom:16px}
+
+  .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:14px}
+  .stat{background:var(--bg);border-radius:12px;padding:12px}
+  .stat b{display:block;font-size:22px}
+  .stat span{font-size:12px;color:var(--muted)}
+  .bar{height:10px;background:var(--line);border-radius:99px;overflow:hidden}
+  .bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--accent),var(--ok));transition:width .3s}
+  .bar-label{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-top:6px}
+
+  form{display:flex;gap:8px;flex-wrap:wrap}
+  input[type=text],input[type=number]{border:1px solid var(--line);border-radius:10px;padding:10px 12px;font:inherit;outline:none;background:#fff}
+  input:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+  #title{flex:1 1 220px}
+  #hours{width:100px}
+  button{font:inherit;cursor:pointer;border:none;border-radius:10px}
+  .btn{background:var(--accent);color:#fff;padding:10px 18px;font-weight:600}
+  .btn:hover{filter:brightness(1.08)}
+  .err{color:var(--danger);font-size:13px;margin-top:8px;min-height:1em}
+
+  .filters{display:flex;gap:6px;background:var(--bg);padding:4px;border-radius:12px;margin-bottom:12px}
+  .filters button{flex:1;padding:8px;background:transparent;color:var(--muted);font-weight:500}
+  .filters button.active{background:#fff;color:var(--text);box-shadow:0 1px 4px rgba(0,0,0,.08)}
+  .filters .cnt{font-size:12px;opacity:.7;margin-left:4px}
+
+  ul{list-style:none;margin:0;padding:0}
+  li{display:flex;align-items:center;gap:12px;padding:12px 8px;border-bottom:1px solid var(--line)}
+  li:last-child{border-bottom:none}
+  li input[type=checkbox]{width:20px;height:20px;accent-color:var(--ok);cursor:pointer;flex:none}
+  .name{flex:1;word-break:break-word}
+  li.done .name{text-decoration:line-through;color:var(--muted)}
+  .hrs{font-size:13px;background:var(--accent-soft);color:var(--accent);padding:3px 10px;border-radius:99px;white-space:nowrap}
+  li.done .hrs{background:var(--ok-soft);color:var(--ok)}
+  .del{background:transparent;color:var(--muted);width:32px;height:32px;font-size:18px;flex:none}
+  .del:hover{background:#fdeaea;color:var(--danger)}
+  .empty{text-align:center;color:var(--muted);padding:24px 0;font-size:14px}
+  @media (max-width:480px){.stats{grid-template-columns:1fr 1fr}.stat:last-child{grid-column:span 2}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Учебные задачи</h1>
+  <p class="sub">Планируй часы и отмечай прогресс</p>
+
+  <div class="card">
+    <div class="stats">
+      <div class="stat"><b id="sTotal">0 ч</b><span>всего запланировано</span></div>
+      <div class="stat"><b id="sDone">0 ч</b><span>выполнено</span></div>
+      <div class="stat"><b id="sLeft">0 ч</b><span>осталось</span></div>
+    </div>
+    <div class="bar"><i id="barFill"></i></div>
+    <div class="bar-label"><span>Прогресс по часам</span><span id="sPct">0%</span></div>
+  </div>
+
+  <div class="card">
+    <form id="form" autocomplete="off">
+      <input type="text" id="title" placeholder="Название задачи" maxlength="120">
+      <input type="number" id="hours" placeholder="Часы" min="0.5" step="0.5">
+      <button class="btn" type="submit">Добавить</button>
+    </form>
+    <div class="err" id="err"></div>
+  </div>
+
+  <div class="card">
+    <div class="filters" id="filters">
+      <button data-f="all" class="active">Все<span class="cnt" id="cAll"></span></button>
+      <button data-f="active">Активные<span class="cnt" id="cActive"></span></button>
+      <button data-f="done">Готовые<span class="cnt" id="cDone"></span></button>
+    </div>
+    <ul id="list"></ul>
+  </div>
+</div>
+
+<script>
+(function(){
+  var KEY = 'study-tracker-v1';
+  var tasks = [
+    {id:1, title:'Чтение', hours:2, done:true},
+    {id:2, title:'Практика', hours:4, done:false},
+    {id:3, title:'Повторение', hours:2, done:false}
+  ];
+  var filter = 'all';
+
+  // Сохранение в браузере (если доступно)
+  try { var saved = JSON.parse(localStorage.getItem(KEY)); if (Array.isArray(saved)) tasks = saved; } catch(e){}
+  function save(){ try { localStorage.setItem(KEY, JSON.stringify(tasks)); } catch(e){} }
+
+  var $ = function(id){ return document.getElementById(id); };
+  function fmt(n){ return (Math.round(n*10)/10).toString().replace('.', ',') + ' ч'; }
+
+  function render(){
+    var total = 0, done = 0, nDone = 0;
+    tasks.forEach(function(t){ total += t.hours; if (t.done){ done += t.hours; nDone++; } });
+    var pct = total ? Math.round(done / total * 100) : 0;
+
+    $('sTotal').textContent = fmt(total);
+    $('sDone').textContent = fmt(done);
+    $('sLeft').textContent = fmt(total - done);
+    $('sPct').textContent = pct + '%';
+    $('barFill').style.width = pct + '%';
+    $('cAll').textContent = tasks.length;
+    $('cActive').textContent = tasks.length - nDone;
+    $('cDone').textContent = nDone;
+
+    var shown = tasks.filter(function(t){
+      return filter === 'all' || (filter === 'done' ? t.done : !t.done);
+    });
+
+    var list = $('list');
+    list.innerHTML = '';
+    if (!shown.length){
+      var e = document.createElement('li');
+      e.className = 'empty';
+      e.textContent = tasks.length ? 'В этом фильтре задач нет' : 'Добавь первую задачу';
+      list.appendChild(e);
+      return;
+    }
+    shown.forEach(function(t){
+      var li = document.createElement('li');
+      if (t.done) li.className = 'done';
+
+      var cb = document.createElement('input');
+      cb.type = 'checkbox'; cb.checked = t.done;
+      cb.setAttribute('aria-label', 'Готово: ' + t.title);
+      cb.onchange = function(){ t.done = cb.checked; save(); render(); };
+
+      var name = document.createElement('span');
+      name.className = 'name'; name.textContent = t.title;
+
+      var hrs = document.createElement('span');
+      hrs.className = 'hrs'; hrs.textContent = fmt(t.hours);
+
+      var del = document.createElement('button');
+      del.className = 'del'; del.title = 'Удалить'; del.textContent = '×';
+      del.setAttribute('aria-label', 'Удалить ' + t.title);
+      del.onclick = function(){
+        tasks = tasks.filter(function(x){ return x.id !== t.id; });
+        save(); render();
+      };
+
+      li.append(cb, name, hrs, del);
+      list.appendChild(li);
+    });
+  }
+
+  $('form').onsubmit = function(ev){
+    ev.preventDefault();
+    var title = $('title').value.trim();
+    var hours = parseFloat(String($('hours').value).replace(',', '.'));
+    if (!title){ $('err').textContent = 'Введи название задачи'; $('title').focus(); return; }
+    if (!(hours > 0)){ $('err').textContent = 'Укажи оценку в часах больше нуля'; $('hours').focus(); return; }
+    $('err').textContent = '';
+    tasks.push({id: Date.now(), title: title, hours: hours, done: false});
+    $('title').value = ''; $('hours').value = '';
+    $('title').focus();
+    save(); render();
+  };
+
+  $('filters').onclick = function(ev){
+    var b = ev.target.closest('button'); if (!b) return;
+    filter = b.dataset.f;
+    Array.prototype.forEach.call(this.children, function(x){ x.classList.toggle('active', x === b); });
+    render();
+  };
+
+  render();
+})();
+</script>
+</body>
+</html>
